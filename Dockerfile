@@ -10,7 +10,7 @@ RUN composer dump-autoload --optimize --no-dev
 FROM node:20 AS assets
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 COPY . .
 RUN npm run build
 
