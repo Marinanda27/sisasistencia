@@ -18,7 +18,8 @@ RUN npm run build
 FROM php:8.3-apache
 RUN apt-get update && apt-get install -y libzip-dev libpng-dev libonig-dev unzip \
     && docker-php-ext-install pdo_mysql mbstring zip gd bcmath opcache \
-    && a2enmod rewrite \
+    && a2dismod mpm_event mpm_worker || true \
+    && a2enmod mpm_prefork rewrite \
     && rm -rf /var/lib/apt/lists/*
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
