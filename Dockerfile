@@ -14,23 +14,17 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-FROM php:8.3-apache
-RUN apt-get update && apt-get install -y libzip-dev libpng-dev libonig-dev unzip \
-    && docker-php-ext-install pdo_mysql mbstring zip gd bcmath opcache \
-    && rm -rf /var/lib/apt/lists/*
+# 3. Imagen final
+FROM dunglas/frankenphp:php8.3
+RUN install-php-extensions pdo_mysql mbstring gd zip bcmath intl opcache
 
-# Dejar UN solo MPM (prefork)
-RUN rm -f /etc/apache2/mods-enabled/mpm_*.load /etc/apache2/mods-enabled/mpm_*.conf \
-    && ln -s /etc/apache2/mods-available/mpm_prefork.load /etc/apache2/mods-enabled/mpm_prefork.load \
-    && ln -s /etc/apache2/mods-available/mpm_prefork.conf /etc/apache2/mods-enabled/mpm_prefork.conf \
-    && a2enmod rewrite
+WORKDIR /app
+COPY --from=vendor /app /app
+COPY --from=assets /app/public/build /app/public/build
 
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-available/*.conf /etc/apache2/apache2.conf
+# Tu .dockerignore excluye estas carpetas, así que hay que recrearlas
+RUN mkdir -p storage/framework/sessions storage/framework/views storage/framework/cache storage/logs bootstrap/cache \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R ug+rw storage bootstrap/cache
 
-WORKDIR /var/www/html
-COPY --from=vendor /app /var/www/html
-COPY --from=assets /app/public/build /var/www/html/public/build
-RUN chown -R www-data:www-data storage bootstrap/cache
-
-CMD ["sh", "-c", "sed -i \"s/Listen 80/Listen ${PORT:-8080}/\" /etc/apache2/ports.conf && sed -i \"s/:80>/:${PORT:-8080}>/\" /etc/apache2/sites-available/000-default.conf && apache2-foreground"]
+CMD ["sh", "-c", "frankenphp php-server --root public/ --listen :${PORT:-8080}"]
