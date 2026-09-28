@@ -15,7 +15,7 @@ COPY . .
 RUN npm run build
 
 # 3. Imagen final
-FROM php:8.1-apache
+FROM php:8.3-apache
 RUN apt-get update && apt-get install -y libzip-dev libpng-dev libonig-dev unzip \
     && docker-php-ext-install pdo_mysql mbstring zip gd bcmath opcache \
     && a2enmod rewrite \
