@@ -20,9 +20,26 @@
 		@foreach ($lista as $key => $value)
 		<tr>
 			<td>{{ $contador }}</td>
-			<td class="text-uppercase">{{ $value->nombre }}</td>
-			<td>{{ date('d/m/Y H:i:s', strtotime($value->dateregister)) }}</td>
-			{{-- <td>{!! Form::button('<div class="fa fa-edit"></div> Editar', array('onclick' => 'modal (\''.URL::route($ruta["edit"], array($value->id, 'listar'=>'SI')).'\', \''.$titulo_modificar.'\', this);', 'class' => 'btn btn-xs btn-warning')) !!}</td> --}}
+			<td class="text-uppercase fw-semibold">{{ $value->nombre }}</td>
+			<td>{{ date('d/m/Y', strtotime($value->dateregister)) }}</td>
+			<td>
+                <span class="fw-bold">{{ date('H:i', strtotime($value->dateregister)) }}</span>
+            </td>
+			<td>
+                @if(isset($value->estado_asistencia))
+                    @if($value->estado_asistencia === 'Puntual')
+                        <span class="badge badge-light-success">
+                            <i class="fa fa-check me-1"></i> Puntual
+                        </span>
+                    @elseif($value->estado_asistencia === 'Tardanza')
+                        <span class="badge badge-light-warning">
+                            <i class="fa fa-clock-o me-1"></i> Tardanza
+                        </span>
+                    @else
+                        <span class="badge badge-light-secondary">{{ $value->estado_asistencia }}</span>
+                    @endif
+                @endif
+            </td>
 			<td>{!! Form::button('<div class="fa fa-trash"></div> Eliminar', array('onclick' => 'modal (\''.URL::route($ruta["delete"], array($value->id, 'SI')).'\', \''.$titulo_eliminar.'\', this);', 'class' => 'btn btn-xs btn-danger')) !!}</td>
 		</tr>
 		<?php

@@ -10,6 +10,8 @@ use App\Http\Controllers\OptionmenuController;
 use App\Http\Controllers\UsertypeController;
 use App\Http\Controllers\WorkertypeController;
 use App\Http\Controllers\AssistenceController;
+use App\Http\Controllers\ScheduleController;
+use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\BranchofficeController;
 use App\Http\Controllers\DashboardMainController;
 use Illuminate\Support\Facades\Route;
@@ -82,6 +84,14 @@ Route::group(['middleware' => 'auth'], function () {
    Route::post('assistence/search', [AssistenceController::class,'search'])->name('assistence.search');
    Route::get('assistence/eliminar/{id}/{listarluego}', [AssistenceController::class,'eliminar'])->name('assistence.eliminar');
    Route::resource('assistence', AssistenceController::class, array('except' => array('show')));
+
+    // Routes for ScheduleController
+   Route::post('schedule/search', [ScheduleController::class,'search'])->name('schedule.search');
+   Route::get('schedule/eliminar/{id}/{listarluego}', [ScheduleController::class,'eliminar'])->name('schedule.eliminar');
+   Route::resource('schedule', ScheduleController::class, array('except' => array('show')));
+
+    // Reportes
+   Route::get('reporte/asistencias', [ReporteController::class,'asistencias'])->name('reporte.asistencias');
 
     Route::post('branchoffice/search', [BranchofficeController::class,'search'])->name('branchoffice.search');
    Route::get('branchoffice/eliminar/{id}/{listarluego}', [BranchofficeController::class,'eliminar'])->name('branchoffice.eliminar');

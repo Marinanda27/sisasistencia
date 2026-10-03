@@ -23,7 +23,6 @@ class AssistenceController extends Controller{
         'search' => 'assistence.search',
         'index'  => 'assistence.index',
         'destroy' => 'assistence.destroy',
-
     );
 
     public function __construct()
@@ -37,70 +36,184 @@ class AssistenceController extends Controller{
         $title            = $this->tituloAdmin;
         $titulo_registrar = $this->tituloRegistrar;
         $ruta             = $this->rutas;
-        $begindate = date('Y-m-01');
-        $enddate = date('Y-m-t');
-        return view($this->folderview.'.admin')->with(compact('entidad', 'title', 'titulo_registrar', 'ruta'));
+
+        // Resumen del día de hoy
+        $today = date('Y-m-d');
+        $resumenDia = $this->getResumenDia($today);
+
+        return view($this->folderview.'.admin')->with(compact('entidad', 'title', 'titulo_registrar', 'ruta', 'resumenDia', 'today'));
+    }
+
+    /**
+     * Calcula el resumen del día: puntual, tardanza, ausentes.
+     */
+    private function getResumenDia($fecha)
+    {
+        $base = session('base');
+
+        // Obtener el horario activo (primer registro)
+        $horario = DB::connection($base)->selectOne("SELECT start_time, grace_minutes FROM schedule ORDER BY id ASC LIMIT 1");
+
+        $totalPersonas = DB::connection($base)->selectOne(
+            "SELECT COUNT(id) as total FROM person WHERE id != 1 AND deleted_at IS NULL"
+        );
+        $total = $totalPersonas ? (int)$totalPersonas->total : 0;
+
+        if (!$horario) {
+            return [
+                'total'     => $total,
+                'puntual'   => 0,
+                'tardanza'  => 0,
+                'ausentes'  => $total,
+                'horario'   => null,
+            ];
+        }
+
+        // Hora límite = start_time + grace_minutes
+        $horaLimite = date('H:i:s', strtotime($horario->start_time) + ($horario->grace_minutes * 60));
+
+        // Puntuales: llegaron antes o en la hora límite
+        $puntuales = DB::connection($base)->selectOne(
+            "SELECT COUNT(DISTINCT a.person_id) as total
+             FROM assistance a
+             WHERE DATE(a.dateregister) = :fecha
+               AND a.deleted_at IS NULL
+               AND a.person_id != 1
+               AND TIME(a.dateregister) <= :hora_limite",
+            ['fecha' => $fecha, 'hora_limite' => $horaLimite]
+        );
+
+        // Tardanzas: llegaron después de la hora límite
+        $tardanzas = DB::connection($base)->selectOne(
+            "SELECT COUNT(DISTINCT a.person_id) as total
+             FROM assistance a
+             WHERE DATE(a.dateregister) = :fecha
+               AND a.deleted_at IS NULL
+               AND a.person_id != 1
+               AND TIME(a.dateregister) > :hora_limite",
+            ['fecha' => $fecha, 'hora_limite' => $horaLimite]
+        );
+
+        $totalPuntual  = $puntuales  ? (int)$puntuales->total  : 0;
+        $totalTardanza = $tardanzas  ? (int)$tardanzas->total  : 0;
+        $totalAusentes = $total - $totalPuntual - $totalTardanza;
+        if ($totalAusentes < 0) $totalAusentes = 0;
+
+        return [
+            'total'      => $total,
+            'puntual'    => $totalPuntual,
+            'tardanza'   => $totalTardanza,
+            'ausentes'   => $totalAusentes,
+            'horario'    => $horario,
+            'hora_limite' => $horaLimite,
+        ];
     }
 
     public function search(Request $request){
         $pagina           = $request->input('page');
         $filas            = $request->input('filas');
         $entidad          = 'Assistance';
-        $name = Libreria::getParam($request->input('name'));
+        $name      = Libreria::getParam($request->input('name'));
         $begindate = Libreria::getParam($request->input('begindate'));
-        $enddate = Libreria::getParam($request->input('enddate'));
-        $sql = "SELECT COUNT(wt.id) as cantidad FROM assistance wt
+        $enddate   = Libreria::getParam($request->input('enddate'));
+        $filtro_tardanza = Libreria::getParam($request->input('filtro_tardanza')); // 'todos','puntual','tardanza'
+
+        // Obtener horario para calcular tardanza
+        $horario = DB::connection(session('base'))->selectOne("SELECT start_time, grace_minutes FROM schedule ORDER BY id ASC LIMIT 1");
+        $horaLimite = $horario ? date('H:i:s', strtotime($horario->start_time) + ($horario->grace_minutes * 60)) : null;
+
+        // ---- COUNT ----
+        $sqlCount  = "SELECT COUNT(wt.id) as cantidad FROM assistance wt
                 LEFT JOIN person p ON wt.person_id = p.id
-                WHERE wt.deleted_at IS NULL";
-        $params = array();
+                WHERE wt.deleted_at IS NULL AND wt.person_id != 1";
+        $paramsCount = [];
+
         if ($name != "" && !is_null($name)) {
             $filter = '%' . $name . '%';
-            $sql .= " AND CONCAT_WS(' ' ,p.firstname,p.lastname) LIKE :filter1 OR CONCAT_WS(' ' ,p.lastname,p.firstname) LIKE :filter2";
-            $params['filter1'] = $filter;
-            $params['filter2'] = $filter;
+            $sqlCount .= " AND (CONCAT_WS(' ', p.firstname, p.lastname) LIKE :filter1 OR CONCAT_WS(' ', p.lastname, p.firstname) LIKE :filter2)";
+            $paramsCount['filter1'] = $filter;
+            $paramsCount['filter2'] = $filter;
+        }
+        if ($begindate != "" && !is_null($begindate)) {
+            $sqlCount .= " AND DATE(wt.dateregister) >= :begindate";
+            $paramsCount['begindate'] = $begindate;
+        }
+        if ($enddate != "" && !is_null($enddate)) {
+            $sqlCount .= " AND DATE(wt.dateregister) <= :enddate";
+            $paramsCount['enddate'] = $enddate;
+        }
+        if ($filtro_tardanza == 'puntual' && $horaLimite) {
+            $sqlCount .= " AND TIME(wt.dateregister) <= :hora_limite_c";
+            $paramsCount['hora_limite_c'] = $horaLimite;
+        } elseif ($filtro_tardanza == 'tardanza' && $horaLimite) {
+            $sqlCount .= " AND TIME(wt.dateregister) > :hora_limite_c";
+            $paramsCount['hora_limite_c'] = $horaLimite;
         }
 
-        $sql .= " ORDER BY wt.id DESC";
-        $sql .= " LIMIT 0,1";
-
-        $resultado = DB::connection(session('base'))->selectOne($sql, $params);
-        $cantidad = 0;
-        if ($resultado !== null) {
-            if ($resultado->cantidad !== null) {
-                $cantidad = $resultado->cantidad;
-            }
-        }
+        $sqlCount .= " LIMIT 0,1";
+        $resultado = DB::connection(session('base'))->selectOne($sqlCount, $paramsCount);
+        $cantidad  = ($resultado && $resultado->cantidad !== null) ? $resultado->cantidad : 0;
 
         $begincompagination = ($pagina - 1) * $filas;
-        $endcompagination = $begincompagination + $filas;
 
-        $params = array();
-        $sql = "SELECT wt.id, CONCAT_WS(' ' ,p.firstname,p.lastname) as nombre, wt.dateregister FROM assistance wt
+        // ---- LIST ----
+        $params = [];
+        $sql = "SELECT wt.id,
+                       CONCAT_WS(' ', p.firstname, p.lastname) as nombre,
+                       wt.dateregister,
+                       wt.tardanza";
+
+        if ($horaLimite) {
+            $sql .= ", CASE WHEN TIME(wt.dateregister) <= :hora_limite THEN 'Puntual' ELSE 'Tardanza' END as estado_asistencia";
+            $params['hora_limite'] = $horaLimite;
+        } else {
+            $sql .= ", 'Sin horario' as estado_asistencia";
+        }
+
+        $sql .= " FROM assistance wt
                 LEFT JOIN person p ON wt.person_id = p.id
-                WHERE wt.deleted_at IS NULL";
+                WHERE wt.deleted_at IS NULL AND wt.person_id != 1";
 
         if ($name != "" && !is_null($name)) {
             $filter = '%' . $name . '%';
-            $sql .= " AND CONCAT_WS(' ' ,p.firstname,p.lastname) LIKE :filter1 OR CONCAT_WS(' ' ,p.lastname,p.firstname) LIKE :filter2";
+            $sql .= " AND (CONCAT_WS(' ', p.firstname, p.lastname) LIKE :filter1 OR CONCAT_WS(' ', p.lastname, p.firstname) LIKE :filter2)";
             $params['filter1'] = $filter;
             $params['filter2'] = $filter;
         }
+        if ($begindate != "" && !is_null($begindate)) {
+            $sql .= " AND DATE(wt.dateregister) >= :begindate";
+            $params['begindate'] = $begindate;
+        }
+        if ($enddate != "" && !is_null($enddate)) {
+            $sql .= " AND DATE(wt.dateregister) <= :enddate";
+            $params['enddate'] = $enddate;
+        }
+        if ($filtro_tardanza == 'puntual' && $horaLimite) {
+            $sql .= " AND TIME(wt.dateregister) <= :hora_limite_f";
+            $params['hora_limite_f'] = $horaLimite;
+        } elseif ($filtro_tardanza == 'tardanza' && $horaLimite) {
+            $sql .= " AND TIME(wt.dateregister) > :hora_limite_f";
+            $params['hora_limite_f'] = $horaLimite;
+        }
 
-        $sql .= " ORDER BY wt.id DESC";
-        $sql .= " LIMIT :begincompagination, :endcompagination ";
+        $sql .= " ORDER BY wt.dateregister DESC";
+        $sql .= " LIMIT :begincompagination, :endcompagination";
+        $params['begincompagination'] = (int) $begincompagination;
+        $params['endcompagination']   = (int) $filas;
 
-        $params["begincompagination"] = (int)$begincompagination;
-        $params["endcompagination"] = (int)$filas;
+        $lista    = DB::connection(session('base'))->select($sql, $params);
+        $cabecera = [];
+        $cabecera[] = ['valor' => '#',                  'numero' => '1'];
+        $cabecera[] = ['valor' => 'Nombre',             'numero' => '1'];
+        $cabecera[] = ['valor' => 'Fecha de registro',  'numero' => '1'];
+        $cabecera[] = ['valor' => 'Hora',               'numero' => '1'];
+        $cabecera[] = ['valor' => 'Estado',             'numero' => '1'];
+        $cabecera[] = ['valor' => 'Operaciones',        'numero' => '1'];
 
-        $lista = DB::connection(session('base'))->select($sql, $params);
-        $cabecera = array();
-        $cabecera[]       = array('valor' => '#', 'numero' => '1');
-        $cabecera[]       = array('valor' => 'Nombre', 'numero' => '1');
-        $cabecera[]       = array('valor' => 'Fecha de registro', 'numero' => '1');
-        $cabecera[]       = array('valor' => 'Operaciones', 'numero' => '2');
         $titulo_modificar = $this->tituloModificar;
         $titulo_eliminar  = $this->tituloEliminar;
         $ruta             = $this->rutas;
+        $horaLimiteDisplay = $horaLimite ? substr($horaLimite, 0, 5) : null;
 
         if ($cantidad > 0) {
             $clsLibreria     = new Libreria();
@@ -109,8 +222,11 @@ class AssistenceController extends Controller{
             $inicio          = $paramPaginacion['inicio'];
             $fin             = $paramPaginacion['fin'];
             $paginaactual    = $paramPaginacion['nuevapagina'];
-            $request->replace(array('page' => $paginaactual));
-            return view($this->folderview . '.list')->with(compact('lista', 'paginacion', 'inicio', 'fin', 'entidad', 'cabecera', 'titulo_modificar', 'titulo_eliminar', 'ruta', 'pagina'));
+            $request->replace(['page' => $paginaactual]);
+            return view($this->folderview . '.list')->with(compact(
+                'lista', 'paginacion', 'inicio', 'fin', 'entidad',
+                'cabecera', 'titulo_modificar', 'titulo_eliminar', 'ruta', 'pagina', 'horaLimiteDisplay'
+            ));
         }
         return view($this->folderview . '.list')->with(compact('lista', 'entidad'));
     }
@@ -203,7 +319,7 @@ class AssistenceController extends Controller{
         }
         $modelo   = Assistance::find($id);
         $personname = $modelo->person ? $modelo->person->firstname . ' ' . $modelo->person->lastname : 'N/A';
-        $mensaje = '<p class="text-inverse fs-5">¿Esta seguro de eliminar la asistencia <b class="text-danger">"'.$personname.'"</b>?</p>';
+        $mensaje = '<p class="text-inverse fs-5">¿Esta seguro de eliminar la asistencia de <b class="text-danger">"'.$personname.'"</b>?</p>';
         $entidad  = 'Assistance';
         $formData = array('route' => array('assistence.destroy', $id), 'method' => 'DELETE', 'class' => 'form-horizontal', 'id' => 'formMantenimiento'.$entidad, 'autocomplete' => 'off');
         $boton    = 'Eliminar';
