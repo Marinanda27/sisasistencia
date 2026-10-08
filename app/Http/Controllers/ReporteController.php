@@ -80,10 +80,116 @@ class ReporteController extends Controller
 
         $lista = DB::connection($base)->select($sql, $params);
 
-        return view('app.reporte.asistencias', compact(
-            'lista', 'begindate', 'enddate', 'filtro', 'name',
+        return view('app.reporte.adminasistencia', compact(
+            'begindate', 'enddate', 'filtro', 'name',
             'horario', 'horaLimite', 'resumen', 'datosPorDia'
         ));
+    }
+
+    /**
+     * POST: devuelve el listado parcial (para AJAX) con filtros y paginación
+     */
+    public function asistenciasPost(Request $request)
+    {
+        $pagina    = (int) $request->input('page', 1);
+        $filas     = (int) $request->input('filas', 10);
+        $name      = $request->input('name', '');
+        $begindate = $request->input('begindate', date('Y-m-01'));
+        $enddate   = $request->input('enddate',   date('Y-m-t'));
+        $filtro    = $request->input('filtro', 'todos');
+
+        $base = session('base');
+
+        // Horario activo
+        $horario = DB::connection($base)->selectOne(
+            "SELECT start_time, grace_minutes FROM schedule ORDER BY id ASC LIMIT 1"
+        );
+        $horaLimite = $horario
+            ? date('H:i:s', strtotime($horario->start_time) + ($horario->grace_minutes * 60))
+            : null;
+
+        // --- WHERE base ---
+        $whereBase  = "FROM assistance wt LEFT JOIN person p ON wt.person_id = p.id
+                        WHERE wt.deleted_at IS NULL AND wt.person_id != 1";
+        $params = [];
+
+        if (!empty($name)) {
+            $whereBase .= " AND (CONCAT_WS(' ', p.firstname, p.lastname) LIKE :filter1
+                              OR CONCAT_WS(' ', p.lastname, p.firstname) LIKE :filter2)";
+            $params['filter1'] = '%' . $name . '%';
+            $params['filter2'] = '%' . $name . '%';
+        }
+        if (!empty($begindate)) {
+            $whereBase .= " AND DATE(wt.dateregister) >= :begindate";
+            $params['begindate'] = $begindate;
+        }
+        if (!empty($enddate)) {
+            $whereBase .= " AND DATE(wt.dateregister) <= :enddate";
+            $params['enddate'] = $enddate;
+        }
+        if ($filtro === 'puntual' && $horaLimite) {
+            $whereBase .= " AND TIME(wt.dateregister) <= :hora_limite_f";
+            $params['hora_limite_f'] = $horaLimite;
+        } elseif ($filtro === 'tardanza' && $horaLimite) {
+            $whereBase .= " AND TIME(wt.dateregister) > :hora_limite_f";
+            $params['hora_limite_f'] = $horaLimite;
+        }
+
+        // --- COUNT ---
+        $countResult = DB::connection($base)->selectOne(
+            "SELECT COUNT(wt.id) as cantidad " . $whereBase . " LIMIT 0,1",
+            $params
+        );
+        $cantidad = $countResult ? (int)$countResult->cantidad : 0;
+
+        // --- LIST ---
+        $begincompagination = ($pagina - 1) * $filas;
+
+        $selectCols = "SELECT wt.id,
+                              CONCAT_WS(' ', p.firstname, p.lastname) as nombre,
+                              wt.dateregister";
+        if ($horaLimite) {
+            $selectCols .= ", CASE WHEN TIME(wt.dateregister) <= :hora_limite THEN 'Puntual' ELSE 'Tardanza' END as estado_asistencia";
+            $params['hora_limite'] = $horaLimite;
+        } else {
+            $selectCols .= ", 'Sin horario' as estado_asistencia";
+        }
+
+        $sqlList = $selectCols . " " . $whereBase
+            . " ORDER BY wt.dateregister DESC"
+            . " LIMIT :begincompagination, :endcompagination";
+        $params['begincompagination'] = $begincompagination;
+        $params['endcompagination']   = $filas;
+
+        $lista = DB::connection($base)->select($sqlList, $params);
+
+        $cabecera = [
+            ['valor' => '#',                  'numero' => '1'],
+            ['valor' => 'Nombre',             'numero' => '1'],
+            ['valor' => 'Fecha de registro',  'numero' => '1'],
+            ['valor' => 'Hora',               'numero' => '1'],
+            ['valor' => 'Estado',             'numero' => '1'],
+        ];
+
+        $entidad          = 'Asistencia';
+        $ruta             = ['search' => 'reporte.asistencias.post'];
+        $horaLimiteDisplay = $horaLimite ? substr($horaLimite, 0, 5) : null;
+
+        if ($cantidad > 0) {
+            $clsLibreria     = new \App\Librerias\Libreria();
+            $paramPaginacion = $clsLibreria->generarPaginacion2($cantidad, $pagina, $filas, $entidad);
+            $paginacion      = $paramPaginacion['cadenapaginacion'];
+            $inicio          = $paramPaginacion['inicio'];
+            $fin             = $paramPaginacion['fin'];
+            $paginaactual    = $paramPaginacion['nuevapagina'];
+            $request->replace(['page' => $paginaactual]);
+            return view('app.reporte.listasistencia')->with(compact(
+                'lista', 'paginacion', 'inicio', 'fin', 'entidad',
+                'cabecera', 'ruta', 'horaLimiteDisplay'
+            ));
+        }
+
+        return view('app.reporte.listasistencia')->with(compact('lista', 'entidad', 'cabecera'));
     }
 
     private function getResumenPeriodo($base, $begindate, $enddate, $horaLimite)

@@ -92,6 +92,7 @@ Route::group(['middleware' => 'auth'], function () {
 
     // Reportes
    Route::get('reporte/asistencias', [ReporteController::class,'asistencias'])->name('reporte.asistencias');
+   Route::post('reporte/asistencias', [ReporteController::class,'asistenciasPost'])->name('reporte.asistencias.post');
 
     Route::post('branchoffice/search', [BranchofficeController::class,'search'])->name('branchoffice.search');
    Route::get('branchoffice/eliminar/{id}/{listarluego}', [BranchofficeController::class,'eliminar'])->name('branchoffice.eliminar');
