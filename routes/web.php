@@ -15,7 +15,7 @@ use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\BranchofficeController;
 use App\Http\Controllers\DashboardMainController;
 use Illuminate\Support\Facades\Route;
-
+use Illuminate\Support\Facades\View;
 
 Route::get('/', [LoginController::class, 'index'])->name('login');
 Route::post('/', [LoginController::class, 'in'])->name('in');

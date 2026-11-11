@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Librerias\Libreria;
+use App\Librerias\HorarioAsistencia;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Jenssegers\Date\Date;
@@ -51,15 +52,19 @@ class AssistenceController extends Controller{
     {
         $base = session('base');
 
-        // Obtener el horario activo (primer registro)
-        $horario = DB::connection($base)->selectOne("SELECT start_time, grace_minutes FROM schedule ORDER BY id ASC LIMIT 1");
+        // Horario general de respaldo; cada marca usa el horario de su grado
+        $horario    = HorarioAsistencia::horarioGeneral($base);
+        $horaLimite = HorarioAsistencia::horaLimite($horario);
+        $hayHorarios = DB::connection($base)->selectOne(
+            "SELECT COUNT(id) as total FROM schedule WHERE deleted_at IS NULL"
+        );
 
         $totalPersonas = DB::connection($base)->selectOne(
             "SELECT COUNT(id) as total FROM person WHERE id != 1 AND deleted_at IS NULL"
         );
         $total = $totalPersonas ? (int)$totalPersonas->total : 0;
 
-        if (!$horario) {
+        if (!$hayHorarios || (int)$hayHorarios->total === 0) {
             return [
                 'total'     => $total,
                 'puntual'   => 0,
@@ -69,30 +74,24 @@ class AssistenceController extends Controller{
             ];
         }
 
-        // Hora límite = start_time + grace_minutes
-        $horaLimite = date('H:i:s', strtotime($horario->start_time) + ($horario->grace_minutes * 60));
-
-        // Puntuales: llegaron antes o en la hora límite
-        $puntuales = DB::connection($base)->selectOne(
-            "SELECT COUNT(DISTINCT a.person_id) as total
-             FROM assistance a
-             WHERE DATE(a.dateregister) = :fecha
-               AND a.deleted_at IS NULL
-               AND a.person_id != 1
-               AND TIME(a.dateregister) <= :hora_limite",
-            ['fecha' => $fecha, 'hora_limite' => $horaLimite]
+        // Se toma la primera marca del día de cada persona para definir su estado
+        $limite = HorarioAsistencia::limiteSql($horaLimite);
+        $conteo = DB::connection($base)->selectOne(
+            "SELECT
+                SUM(CASE WHEN x.limite IS NOT NULL AND x.hora <= x.limite THEN 1 ELSE 0 END) as puntuales,
+                SUM(CASE WHEN x.limite IS NOT NULL AND x.hora >  x.limite THEN 1 ELSE 0 END) as tardanzas
+             FROM (
+                SELECT a.person_id, MIN(TIME(a.dateregister)) as hora, MIN({$limite}) as limite
+                FROM assistance a" . HorarioAsistencia::joinSql('a') . "
+                WHERE DATE(a.dateregister) = :fecha
+                  AND a.deleted_at IS NULL
+                  AND a.person_id != 1
+                GROUP BY a.person_id
+             ) x",
+            ['fecha' => $fecha]
         );
-
-        // Tardanzas: llegaron después de la hora límite
-        $tardanzas = DB::connection($base)->selectOne(
-            "SELECT COUNT(DISTINCT a.person_id) as total
-             FROM assistance a
-             WHERE DATE(a.dateregister) = :fecha
-               AND a.deleted_at IS NULL
-               AND a.person_id != 1
-               AND TIME(a.dateregister) > :hora_limite",
-            ['fecha' => $fecha, 'hora_limite' => $horaLimite]
-        );
+        $puntuales = (object)['total' => $conteo ? (int)$conteo->puntuales : 0];
+        $tardanzas = (object)['total' => $conteo ? (int)$conteo->tardanzas : 0];
 
         $totalPuntual  = $puntuales  ? (int)$puntuales->total  : 0;
         $totalTardanza = $tardanzas  ? (int)$tardanzas->total  : 0;
@@ -118,86 +117,49 @@ class AssistenceController extends Controller{
         $enddate   = Libreria::getParam($request->input('enddate'));
         $filtro_tardanza = Libreria::getParam($request->input('filtro_tardanza')); // 'todos','puntual','tardanza'
 
-        // Obtener horario para calcular tardanza
-        $horario = DB::connection(session('base'))->selectOne("SELECT start_time, grace_minutes FROM schedule ORDER BY id ASC LIMIT 1");
-        $horaLimite = $horario ? date('H:i:s', strtotime($horario->start_time) + ($horario->grace_minutes * 60)) : null;
+        // Horario general de respaldo; cada marca usa el horario de su grado
+        $horario    = HorarioAsistencia::horarioGeneral(session('base'));
+        $horaLimite = HorarioAsistencia::horaLimite($horario);
 
-        // ---- COUNT ----
-        $sqlCount  = "SELECT COUNT(wt.id) as cantidad FROM assistance wt
-                LEFT JOIN person p ON wt.person_id = p.id
-                WHERE wt.deleted_at IS NULL AND wt.person_id != 1";
-        $paramsCount = [];
+        $from   = " FROM assistance wt
+                LEFT JOIN person p ON wt.person_id = p.id"
+                . HorarioAsistencia::joinSql('wt')
+                . " WHERE wt.deleted_at IS NULL AND wt.person_id != 1";
+        $params = [];
 
         if ($name != "" && !is_null($name)) {
             $filter = '%' . $name . '%';
-            $sqlCount .= " AND (CONCAT_WS(' ', p.firstname, p.lastname) LIKE :filter1 OR CONCAT_WS(' ', p.lastname, p.firstname) LIKE :filter2)";
-            $paramsCount['filter1'] = $filter;
-            $paramsCount['filter2'] = $filter;
+            $from .= " AND (CONCAT_WS(' ', p.firstname, p.lastname) LIKE :filter1 OR CONCAT_WS(' ', p.lastname, p.firstname) LIKE :filter2)";
+            $params['filter1'] = $filter;
+            $params['filter2'] = $filter;
         }
         if ($begindate != "" && !is_null($begindate)) {
-            $sqlCount .= " AND DATE(wt.dateregister) >= :begindate";
-            $paramsCount['begindate'] = $begindate;
+            $from .= " AND DATE(wt.dateregister) >= :begindate";
+            $params['begindate'] = $begindate;
         }
         if ($enddate != "" && !is_null($enddate)) {
-            $sqlCount .= " AND DATE(wt.dateregister) <= :enddate";
-            $paramsCount['enddate'] = $enddate;
+            $from .= " AND DATE(wt.dateregister) <= :enddate";
+            $params['enddate'] = $enddate;
         }
-        if ($filtro_tardanza == 'puntual' && $horaLimite) {
-            $sqlCount .= " AND TIME(wt.dateregister) <= :hora_limite_c";
-            $paramsCount['hora_limite_c'] = $horaLimite;
-        } elseif ($filtro_tardanza == 'tardanza' && $horaLimite) {
-            $sqlCount .= " AND TIME(wt.dateregister) > :hora_limite_c";
-            $paramsCount['hora_limite_c'] = $horaLimite;
-        }
+        $from .= HorarioAsistencia::filtroSql('wt', $horaLimite, $filtro_tardanza);
 
-        $sqlCount .= " LIMIT 0,1";
-        $resultado = DB::connection(session('base'))->selectOne($sqlCount, $paramsCount);
+        // ---- COUNT ----
+        $resultado = DB::connection(session('base'))->selectOne("SELECT COUNT(wt.id) as cantidad" . $from . " LIMIT 0,1", $params);
         $cantidad  = ($resultado && $resultado->cantidad !== null) ? $resultado->cantidad : 0;
 
         $begincompagination = ($pagina - 1) * $filas;
 
         // ---- LIST ----
-        $params = [];
         $sql = "SELECT wt.id,
                        CONCAT_WS(' ', p.firstname, p.lastname) as nombre,
+                       wt.grade,
+                       wt.section,
                        wt.dateregister,
-                       wt.tardanza";
-
-        if ($horaLimite) {
-            $sql .= ", CASE WHEN TIME(wt.dateregister) <= :hora_limite THEN 'Puntual' ELSE 'Tardanza' END as estado_asistencia";
-            $params['hora_limite'] = $horaLimite;
-        } else {
-            $sql .= ", 'Sin horario' as estado_asistencia";
-        }
-
-        $sql .= " FROM assistance wt
-                LEFT JOIN person p ON wt.person_id = p.id
-                WHERE wt.deleted_at IS NULL AND wt.person_id != 1";
-
-        if ($name != "" && !is_null($name)) {
-            $filter = '%' . $name . '%';
-            $sql .= " AND (CONCAT_WS(' ', p.firstname, p.lastname) LIKE :filter1 OR CONCAT_WS(' ', p.lastname, p.firstname) LIKE :filter2)";
-            $params['filter1'] = $filter;
-            $params['filter2'] = $filter;
-        }
-        if ($begindate != "" && !is_null($begindate)) {
-            $sql .= " AND DATE(wt.dateregister) >= :begindate";
-            $params['begindate'] = $begindate;
-        }
-        if ($enddate != "" && !is_null($enddate)) {
-            $sql .= " AND DATE(wt.dateregister) <= :enddate";
-            $params['enddate'] = $enddate;
-        }
-        if ($filtro_tardanza == 'puntual' && $horaLimite) {
-            $sql .= " AND TIME(wt.dateregister) <= :hora_limite_f";
-            $params['hora_limite_f'] = $horaLimite;
-        } elseif ($filtro_tardanza == 'tardanza' && $horaLimite) {
-            $sql .= " AND TIME(wt.dateregister) > :hora_limite_f";
-            $params['hora_limite_f'] = $horaLimite;
-        }
-
-        $sql .= " ORDER BY wt.dateregister DESC";
-        $sql .= " LIMIT :begincompagination, :endcompagination";
+                       wt.tardanza,
+                       " . HorarioAsistencia::estadoSql('wt', $horaLimite) . " as estado_asistencia"
+             . $from
+             . " ORDER BY wt.dateregister DESC"
+             . " LIMIT :begincompagination, :endcompagination";
         $params['begincompagination'] = (int) $begincompagination;
         $params['endcompagination']   = (int) $filas;
 
@@ -205,6 +167,7 @@ class AssistenceController extends Controller{
         $cabecera = [];
         $cabecera[] = ['valor' => '#',                  'numero' => '1'];
         $cabecera[] = ['valor' => 'Nombre',             'numero' => '1'];
+        $cabecera[] = ['valor' => 'Grado',              'numero' => '1'];
         $cabecera[] = ['valor' => 'Fecha de registro',  'numero' => '1'];
         $cabecera[] = ['valor' => 'Hora',               'numero' => '1'];
         $cabecera[] = ['valor' => 'Estado',             'numero' => '1'];

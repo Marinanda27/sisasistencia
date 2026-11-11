@@ -5,6 +5,7 @@ use App\Librerias\Libreria;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use App\Models\Schedule;
 
 class ScheduleController extends Controller
@@ -53,8 +54,8 @@ class ScheduleController extends Controller
         $begincompagination = ($pagina - 1) * $filas;
 
         $params = [];
-        $sql    = "SELECT s.id, s.start_time, s.grace_minutes, s.created_at FROM schedule s WHERE 1=1";
-        $sql   .= " ORDER BY s.id DESC";
+        $sql    = "SELECT s.id, s.grade, s.start_time, s.grace_minutes, s.created_at FROM schedule s WHERE 1=1";
+        $sql   .= " ORDER BY s.grade IS NULL DESC, s.grade ASC, s.id DESC";
         $sql   .= " LIMIT :begincompagination, :endcompagination";
         $params['begincompagination'] = (int) $begincompagination;
         $params['endcompagination']   = (int) $filas;
@@ -62,6 +63,7 @@ class ScheduleController extends Controller
         $lista    = DB::connection(session('base'))->select($sql, $params);
         $cabecera = [];
         $cabecera[] = ['valor' => '#',               'numero' => '1'];
+        $cabecera[] = ['valor' => 'Grado',           'numero' => '1'];
         $cabecera[] = ['valor' => 'Hora de entrada', 'numero' => '1'];
         $cabecera[] = ['valor' => 'Min. de tolerancia', 'numero' => '1'];
         $cabecera[] = ['valor' => 'Registrado',      'numero' => '1'];
@@ -101,10 +103,13 @@ class ScheduleController extends Controller
     {
         $listar   = Libreria::getParam($request->input('listar'), 'NO');
         $reglas   = [
+            'grade'         => $this->reglaGrado(null),
             'start_time'    => 'required',
             'grace_minutes' => 'required|integer|min:0',
         ];
         $mensajes   = [
+            'grade.between'          => 'El grado debe estar entre 1 y 5.',
+            'grade.unique'           => 'Ya existe un horario registrado para ese grado.',
             'start_time.required'    => 'La hora de entrada es obligatoria.',
             'grace_minutes.required' => 'Los minutos de tolerancia son obligatorios.',
         ];
@@ -114,6 +119,7 @@ class ScheduleController extends Controller
         }
         $error = DB::transaction(function () use ($request) {
             $schedule                = new Schedule();
+            $schedule->grade         = $request->filled('grade') ? (int) $request->input('grade') : null;
             $schedule->start_time    = $request->input('start_time');
             $schedule->grace_minutes = (int) $request->input('grace_minutes');
             $schedule->save();
@@ -129,7 +135,7 @@ class ScheduleController extends Controller
         }
         $listar   = Libreria::getParam($request->input('listar'), 'NO');
         $schedule = DB::connection(session('base'))->selectOne(
-            'SELECT id, start_time, grace_minutes FROM schedule WHERE id = :id',
+            'SELECT id, grade, start_time, grace_minutes FROM schedule WHERE id = :id',
             ['id' => $id]
         );
         $entidad  = 'Schedule';
@@ -145,10 +151,13 @@ class ScheduleController extends Controller
             return $existe;
         }
         $reglas   = [
+            'grade'         => $this->reglaGrado($id),
             'start_time'    => 'required',
             'grace_minutes' => 'required|integer|min:0',
         ];
         $mensajes   = [
+            'grade.between'          => 'El grado debe estar entre 1 y 5.',
+            'grade.unique'           => 'Ya existe un horario registrado para ese grado.',
             'start_time.required'    => 'La hora de entrada es obligatoria.',
             'grace_minutes.required' => 'Los minutos de tolerancia son obligatorios.',
         ];
@@ -158,11 +167,24 @@ class ScheduleController extends Controller
         }
         $error = DB::transaction(function () use ($request, $id) {
             $schedule                = Schedule::find($id);
+            $schedule->grade         = $request->filled('grade') ? (int) $request->input('grade') : null;
             $schedule->start_time    = $request->input('start_time');
             $schedule->grace_minutes = (int) $request->input('grace_minutes');
             $schedule->save();
         });
         return is_null($error) ? "OK" : $error;
+    }
+
+    /**
+     * Grado opcional (1-5); solo puede existir un horario por grado.
+     */
+    private function reglaGrado($ignoreId)
+    {
+        $unique = Rule::unique(session('base') . '.schedule', 'grade')->whereNull('deleted_at');
+        if (!is_null($ignoreId)) {
+            $unique->ignore($ignoreId);
+        }
+        return ['nullable', 'integer', 'between:1,5', $unique];
     }
 
     public function destroy($id)

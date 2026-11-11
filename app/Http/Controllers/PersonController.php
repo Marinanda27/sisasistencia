@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Person;
 use App\Models\Workertype;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class PersonController extends Controller{
     protected $folderview      = 'app.person';
@@ -50,7 +51,7 @@ class PersonController extends Controller{
         $params = array();
         if ($name != "" && !is_null($name)) {
             $filter = '%' . $name . '%';
-            $sql .= " AND CONCAT_WS(' ' ,pe.firstname,pe.lastname) LIKE :filter1 OR CONCAT_WS(' ' ,pe.lastname,pe.firstname) LIKE :filter2 OR pe.bussinesname LIKE :filter3";
+            $sql .= " AND (CONCAT_WS(' ' ,pe.firstname,pe.lastname) LIKE :filter1 OR CONCAT_WS(' ' ,pe.lastname,pe.firstname) LIKE :filter2 OR pe.bussinesname LIKE :filter3)";
             $params['filter1'] = $filter;
             $params['filter2'] = $filter;
             $params['filter3'] = $filter;
@@ -78,12 +79,12 @@ class PersonController extends Controller{
         $endcompagination = $begincompagination + $filas;
 
         $params = array();
-        $sql = "SELECT pe.id,CONCAT_WS(' ',pe.lastname,pe.firstname) as personname,pe.dni FROM person pe
+        $sql = "SELECT pe.id,CONCAT_WS(' ',pe.lastname,pe.firstname) as personname,pe.dni,pe.grade,pe.section FROM person pe
                 WHERE pe.deleted_at IS NULL AND (pe.type ='P' OR pe.type2 = 'P') AND pe.id <> 1";
 
         if ($name != "" && !is_null($name)) {
             $filter = '%' . $name . '%';
-            $sql .= " AND CONCAT_WS(' ' ,pe.firstname,pe.lastname) LIKE :filter1 OR CONCAT_WS(' ' ,pe.lastname,pe.firstname) LIKE :filter2 OR pe.bussinesname LIKE :filter3";
+            $sql .= " AND (CONCAT_WS(' ' ,pe.firstname,pe.lastname) LIKE :filter1 OR CONCAT_WS(' ' ,pe.lastname,pe.firstname) LIKE :filter2 OR pe.bussinesname LIKE :filter3)";
             $params['filter1'] = $filter;
             $params['filter2'] = $filter;
             $params['filter3'] = $filter;
@@ -106,7 +107,9 @@ class PersonController extends Controller{
         $cabecera[]       = array('valor' => '#', 'numero' => '1');
         $cabecera[]       = array('valor' => 'Persona', 'numero' => '1');
         $cabecera[]       = array('valor' => 'DNI', 'numero' => '1');
-        $cabecera[]       = array('valor' => 'Operaciones', 'numero' => '3');
+        $cabecera[]       = array('valor' => 'Grado', 'numero' => '1');
+        $cabecera[]       = array('valor' => 'Sección', 'numero' => '1');
+        $cabecera[]       = array('valor' => 'Operaciones', 'numero' => '2');
         $titulo_modificar = $this->tituloModificar;
         $titulo_eliminar  = $this->tituloEliminar;
         $ruta             = $this->rutas;
@@ -222,21 +225,14 @@ class PersonController extends Controller{
         if ($existe !== true) {
             return $existe;
         }
-        $listar          = Libreria::getParam($request->input('listar'), 'NO');
-        $supplier        = Person::find($id);
-        $type2           = $supplier->type2;
-        $entidad         = 'Supplier';
-
-        $cboWorkertype   = array('' => 'Seleccione') + Workertype::pluck('name', 'id')->all();
-
-        $formData        = array('supplier.update', $id);
-        $formData        = array('route' => $formData, 'method' => 'PUT', 'class' => 'form', 'id' => 'formMantenimiento'.$entidad, 'autocomplete' => 'off');
-        $boton           = 'Modificar';
-
-        $cboSecontype = array('E'=>"EMPRESA","P"=>"PERSONA");
-
-      
-        return view($this->folderview.'.mant')->with(compact('supplier', 'formData', 'entidad', 'boton','listar', 'cboWorkertype','cboSecontype','type2'));
+        $listar   = Libreria::getParam($request->input('listar'), 'NO');
+        $person   = Person::find($id);
+        $entidad  = 'Customer';
+        $formData = array('route' => array('person.update', $id), 'method' => 'PUT', 'class' => 'form-horizontal', 'id' => 'formMantenimiento'.$entidad, 'autocomplete' => 'off');
+        $boton    = 'Modificar';
+        $cboGrade   = array('' => 'Sin grado', 1 => '1° grado', 2 => '2° grado', 3 => '3° grado', 4 => '4° grado', 5 => '5° grado');
+        $cboSection = array('' => 'Sin sección', 'A' => 'A', 'B' => 'B');
+        return view($this->folderview.'.mant')->with(compact('person', 'formData', 'entidad', 'boton', 'listar', 'cboGrade', 'cboSection'));
     }
 
     public function update(Request $request, $id){
@@ -244,75 +240,37 @@ class PersonController extends Controller{
         if ($existe !== true) {
             return $existe;
         }
-        $secondtype = $request->input('secondtype');
-         if ($secondtype === 'E') { 
-            $reglas = array(
-               'bussinesname'        => 'required|max:100',
-               'ruc'                  => 'required',
-            );
-
-            $mensajes = array(
-               'bussinesname.required'    => 'Debe ingresar razón social del proveedor',
-               'ruc.required'          => 'Debe ingresar RUC del proveedor',
-            );
-         }else{
-            $reglas = array(
-               'lastname'        => 'required|max:100',
-               'firstname'       => 'required|max:100',
-               'dni'             => 'required|regex:/^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]$/',
-            );
-
-            $mensajes = array(
-               'lastname.required'         => 'Debe ingresar apellidos del proveedor',
-               'firstname.required'        => 'Debe ingresar nombre del proveedor',
-               'dni.required'              => 'Debe ingresar DNI del proveedor',
-            );
-         }
-
+        $reglas = array(
+            'firstname' => 'required|max:100',
+            'lastname'  => 'required|max:100',
+            'dni'       => array(
+                'nullable', 'regex:/^[0-9]{8}$/',
+                Rule::unique(session('base').'.person', 'dni')->ignore($id)->whereNull('deleted_at'),
+            ),
+            'grade'     => 'nullable|integer|between:1,5',
+            'section'   => 'nullable|in:A,B',
+        );
+        $mensajes = array(
+            'firstname.required' => 'Debe ingresar el nombre.',
+            'lastname.required'  => 'Debe ingresar los apellidos.',
+            'dni.regex'          => 'El DNI debe tener 8 dígitos.',
+            'dni.unique'         => 'El DNI ya está registrado para otra persona.',
+            'grade.between'      => 'El grado debe estar entre 1 y 5.',
+            'section.in'         => 'La sección debe ser A o B.',
+        );
         $validacion = Validator::make($request->all(), $reglas, $mensajes);
         if ($validacion->fails()) {
             return $validacion->messages()->toJson();
         }
 
-        $person = Person::where('dni','=',$request->input('dni'))->orWhere('ruc','=',$request->input('ruc'))
-                  ->where(function($query) {
-                     $query->where('type','=','S')->orWhere('type2','=','S');
-                  })
-                  ->where('id','<>',$id)
-                  ->first();
-        if ($person !== null) {
-            $error = array(
-                'secondtype' => array(
-                    'El ruc / dni ya esta siendo usado por otro proveedor'
-                  ));
-            return json_encode($error);
-        }
-
-
         $error = DB::transaction(function() use($request, $id){
-            $supplier                = Person::find($id);
-            $secondtype = $request->input('secondtype');
-            if ($secondtype === 'E') {
-               $supplier->bussinesname    = strtoupper(Libreria::getParam($request->input('bussinesname')));
-               $supplier->ruc           = $request->input('ruc');
-               $supplier->dni           = null;
-               $supplier->firstname     = null;
-               $supplier->lastname      = null;
-            } else {
-               $supplier->dni           = $request->input('dni');
-               $supplier->firstname     = strtoupper(Libreria::getParam($request->input('firstname')));
-               $supplier->lastname      = strtoupper(Libreria::getParam($request->input('lastname')));
-               $supplier->bussinesname  = null;
-               $supplier->ruc           = null;
-            }
-            $supplier->address       = Libreria::getParam(strtoupper($request->input('address')));
-
-            $supplier->email         = Libreria::getParam($request->input('email'));
-            $supplier->cellnumber    = Libreria::getParam($request->input('cellnumber'));
-            $supplier->observation   = Libreria::getParam($request->input('observation'));
-            $supplier->secondtype    = $request->input('secondtype');
-
-            $supplier->save();
+            $person            = Person::find($id);
+            $person->firstname = strtoupper(trim($request->input('firstname')));
+            $person->lastname  = strtoupper(trim($request->input('lastname')));
+            $person->dni       = $request->filled('dni') ? $request->input('dni') : null;
+            $person->grade     = $request->filled('grade') ? (int) $request->input('grade') : null;
+            $person->section   = $request->filled('section') ? $request->input('section') : null;
+            $person->save();
         });
         return is_null($error) ? "OK" : $error;
     }
@@ -348,9 +306,9 @@ class PersonController extends Controller{
          if ($modelo->secondtype === 'E') {
             $proveedorname = $modelo->bussinesname;
          }
-        $mensaje = '<p class="text-inverse fs-5">¿Esta seguro de eliminar al proveedor <strong class="text-danger">' . $proveedorname . '</strong>?</p>';
-        $entidad  = 'Supplier';
-        $formData = array('route' => array('supplier.destroy', $id), 'method' => 'DELETE', 'class' => 'form', 'id' => 'formMantenimiento'.$entidad, 'autocomplete' => 'off');
+        $mensaje = '<p class="text-inverse fs-5">¿Está seguro de eliminar a la persona <strong class="text-danger">' . $proveedorname . '</strong>?</p>';
+        $entidad  = 'Customer';
+        $formData = array('route' => array('person.destroy', $id), 'method' => 'DELETE', 'class' => 'form', 'id' => 'formMantenimiento'.$entidad, 'autocomplete' => 'off');
         $boton    = 'Eliminar';
         return view('app.confirmarEliminar')->with(compact('modelo', 'formData', 'entidad', 'boton', 'listar','mensaje'));
     }

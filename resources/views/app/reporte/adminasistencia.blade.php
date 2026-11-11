@@ -14,34 +14,44 @@
         {!! Form::open(['route' => 'reporte.asistencias.post', 'method' => 'POST', 'onsubmit' => 'return false;', 'class' => 'row gx-4 gy-3 align-items-end', 'role' => 'form', 'autocomplete' => 'off', 'id' => 'formBusquedaAsistencia']) !!}
         {!! Form::hidden('page', 1, ['id' => 'pageAsistencia']) !!}
 
-        <div class="col-md-3 col-sm-6">
+        <div class="col-xl col-md-4 col-sm-6">
             {!! Form::label('name', 'Nombre:', ['class' => 'fw-bold text-dark fs-7 mb-1']) !!}
             {!! Form::text('name', '', ['class' => 'form-control form-control-sm', 'id' => 'nameAsistencia', 'placeholder' => 'Buscar por nombre...']) !!}
         </div>
 
-        <div class="col-md-2 col-sm-6">
+        <div class="col-xl col-md-4 col-sm-6">
             {!! Form::label('begindate', 'Fecha desde:', ['class' => 'fw-bold text-dark fs-7 mb-1']) !!}
             {!! Form::date('begindate', date('Y-m-01'), ['class' => 'form-control form-control-sm', 'id' => 'begindateAsistencia']) !!}
         </div>
 
-        <div class="col-md-2 col-sm-6">
+        <div class="col-xl col-md-4 col-sm-6">
             {!! Form::label('enddate', 'Fecha hasta:', ['class' => 'fw-bold text-dark fs-7 mb-1']) !!}
             {!! Form::date('enddate', date('Y-m-t'), ['class' => 'form-control form-control-sm', 'id' => 'enddateAsistencia']) !!}
         </div>
 
-        <div class="col-md-2 col-sm-6">
+        <div class="col-xl col-md-4 col-sm-6">
+            {!! Form::label('grade', 'Grado:', ['class' => 'fw-bold text-dark fs-7 mb-1']) !!}
+            {!! Form::select('grade', ['' => 'Todos', 1 => '1° grado', 2 => '2° grado', 3 => '3° grado', 4 => '4° grado', 5 => '5° grado'], '', ['class' => 'form-select form-select-sm', 'id' => 'gradeAsistencia']) !!}
+        </div>
+
+        <div class="col-xl col-md-4 col-sm-6">
+            {!! Form::label('section', 'Sección:', ['class' => 'fw-bold text-dark fs-7 mb-1']) !!}
+            {!! Form::select('section', ['' => 'Todas', 'A' => 'Sección A', 'B' => 'Sección B'], '', ['class' => 'form-select form-select-sm', 'id' => 'sectionAsistencia']) !!}
+        </div>
+
+        <div class="col-xl col-md-4 col-sm-6">
             {!! Form::label('filtro', 'Estado:', ['class' => 'fw-bold text-dark fs-7 mb-1']) !!}
             {!! Form::select('filtro', ['todos' => 'Todos', 'puntual' => '✅ Puntual', 'tardanza' => '⚠️ Tardanza'], 'todos', ['class' => 'form-select form-select-sm', 'id' => 'filtroAsistencia']) !!}
         </div>
 
-        <div class="col-md-1 col-sm-6">
+        <div class="col-xl-auto col-md-4 col-sm-6">
             {!! Form::label('filas', 'Filas:', ['class' => 'fw-bold text-dark fs-7 mb-1']) !!}
             {!! Form::selectRange('filas', 5, 50, 10, ['class' => 'form-select form-select-sm', 'id' => 'filasAsistencia', 'onchange' => 'buscarAsistencia()']) !!}
         </div>
 
-        <div class="col-auto d-flex gap-2 align-items-end">
+        <div class="col-xl-auto col-12 d-flex gap-2 align-items-end">
             {!! Form::button('<i class="ki-duotone ki-magnifier fs-5 me-1"><span class="path1"></span><span class="path2"></span></i> Generar reporte',
-                ['class' => 'btn btn-primary btn-sm', 'id' => 'btnBuscarAsistencia', 'onclick' => 'buscarAsistencia()']) !!}
+                ['class' => 'btn btn-primary btn-sm text-nowrap', 'id' => 'btnBuscarAsistencia', 'onclick' => 'buscarAsistencia()']) !!}
         </div>
 
         {!! Form::close() !!}
@@ -75,6 +85,8 @@ function buscarAsistencia() {
         begindate: $('#begindateAsistencia').val(),
         enddate:   $('#enddateAsistencia').val(),
         filtro:    $('#filtroAsistencia').val(),
+        grade:     $('#gradeAsistencia').val(),
+        section:   $('#sectionAsistencia').val(),
         filas:     $('#filasAsistencia').val(),
     };
 
@@ -106,7 +118,7 @@ $(document).ready(function () {
         }
     });
 
-    $('#filtroAsistencia').on('change', function() {
+    $('#filtroAsistencia, #gradeAsistencia, #sectionAsistencia').on('change', function() {
         buscarAsistencia();
     });
 });

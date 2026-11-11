@@ -12,6 +12,7 @@ class Person extends Model
     use SoftDeletes;
     protected $table = 'person';
     protected $dates = ['deleted_at'];
+    protected $casts = ['grade' => 'integer'];
     protected $connection = '';
 
     public function __construct(array $attributes = [])

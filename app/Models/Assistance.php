@@ -16,11 +16,16 @@ class Assistance extends Model
 
     protected $fillable = [
         'person_id',
+        'grade',
+        'section',
         'dateregister',
+        'tardanza',
     ];
 
     protected $casts = [
+        'grade'        => 'integer',
         'dateregister' => 'datetime',
+        'tardanza'     => 'boolean',
     ];
 
     public function __construct(array $attributes = [])

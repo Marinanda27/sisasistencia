@@ -21,6 +21,13 @@
 		<tr>
 			<td>{{ $contador }}</td>
 			<td class="text-uppercase fw-semibold">{{ $value->nombre }}</td>
+			<td>
+                    @if(!is_null($value->grade))
+                        <span class="badge badge-light-info px-3 py-2">{{ $value->grade }}°{{ $value->section ? ' "'.$value->section.'"' : '' }}</span>
+                    @else
+                        <span class="text-muted">—</span>
+                    @endif
+                </td>
 			<td>{{ date('d/m/Y', strtotime($value->dateregister)) }}</td>
 			<td>
                 <span class="fw-bold">{{ date('H:i', strtotime($value->dateregister)) }}</span>

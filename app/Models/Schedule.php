@@ -11,11 +11,13 @@ class Schedule extends Model
     protected $connection = '';
 
     protected $fillable = [
+        'grade',
         'start_time',
         'grace_minutes',
     ];
 
     protected $casts = [
+        'grade'          => 'integer',
         'start_time'     => 'string',
         'grace_minutes'  => 'integer',
     ];

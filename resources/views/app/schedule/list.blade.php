@@ -18,6 +18,13 @@
 		<tr>
 			<td>{{ $contador }}</td>
 			<td>
+                @if(!is_null($value->grade))
+                    <span class="badge badge-light-info fs-6 fw-bold">{{ $value->grade }}° grado</span>
+                @else
+                    <span class="badge badge-light-secondary fs-6">General</span>
+                @endif
+            </td>
+			<td>
                 <span class="badge badge-light-primary fs-6 fw-bold">
                     <i class="fa fa-clock-o me-1"></i>
                     {{ \Carbon\Carbon::createFromFormat('H:i:s', $value->start_time)->format('H:i') }}

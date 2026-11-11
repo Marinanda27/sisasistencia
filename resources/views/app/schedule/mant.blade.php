@@ -2,6 +2,13 @@
 {!! Form::model($schedule, $formData) !!}
 	{!! Form::hidden('listar', $listar, ['id' => 'listar']) !!}
 	<div class="row mb-6">
+		{!! Form::label('grade', 'Grado:', ['class' => 'col-lg-4 col-md-4 col-sm-4 col-form-label fw-bold fs-6']) !!}
+		<div class="col-lg-8 col-md-8 col-sm-8">
+			{!! Form::select('grade', ['' => 'General (todos los grados)', 1 => '1° grado', 2 => '2° grado', 3 => '3° grado', 4 => '4° grado', 5 => '5° grado'], isset($schedule) ? $schedule->grade : null, ['class' => 'form-select form-select-solid text-dark', 'id' => 'grade']) !!}
+            <small class="text-muted">Grado al que aplica este horario</small>
+		</div>
+	</div>
+	<div class="row mb-6">
 		{!! Form::label('start_time', 'Hora de entrada:', ['class' => 'col-lg-4 col-md-4 col-sm-4 col-form-label fw-bold fs-6']) !!}
 		<div class="col-lg-8 col-md-8 col-sm-8">
 			{!! Form::time('start_time', isset($schedule) ? $schedule->start_time : null, ['class' => 'form-control form-control-solid text-dark', 'id' => 'start_time', 'placeholder' => 'Ej: 08:00']) !!}

@@ -27,6 +27,20 @@
             <tr>
                 <td class="text-muted fw-semibold">{{ $contador }}</td>
                 <td class="text-uppercase fw-semibold">{{ $value->nombre }}</td>
+                <td>
+                    @if(!is_null($value->grade))
+                        <span class="badge badge-light-info px-3 py-2">{{ $value->grade }}°</span>
+                    @else
+                        <span class="text-muted">—</span>
+                    @endif
+                </td>
+                <td>
+                    @if(!empty($value->section))
+                        <span class="badge badge-light-primary px-3 py-2">{{ $value->section }}</span>
+                    @else
+                        <span class="text-muted">—</span>
+                    @endif
+                </td>
                 <td>{{ date('d/m/Y', strtotime($value->dateregister)) }}</td>
                 <td class="fw-bold">{{ date('H:i', strtotime($value->dateregister)) }}</td>
                 <td>
@@ -50,7 +64,7 @@
         </tbody>
         <tfoot>
             <tr class="fw-bold bg-light">
-                <td colspan="4" class="text-end">Total registros:</td>
+                <td colspan="6" class="text-end">Total registros:</td>
                 <td><span class="badge badge-light-primary">{{ count($lista) }}</span></td>
             </tr>
         </tfoot>
